@@ -10,6 +10,7 @@ import skimage.transform
 import matplotlib.pyplot as plt
 import cv2
 
+import tempfile
 import io
 import os
 
@@ -33,6 +34,8 @@ def imread(filename, scale=1.0):
     return im
 
 def imsave(filename, im):
+    if np.max(im) > 50:
+        im = im / 255.0
     im = np.clip(im, -1, 1)
     skio.imsave(filename, im)
 
@@ -47,12 +50,17 @@ def showimage(im, clip=True, quality=80):
     IPython.display.display(IPython.display.Image(data=f.getvalue()))
 
 def videosave(filename, ims, fps=60):
-    height, width = ims[0].shape[0], ims[0].shape[1]
-    video = cv2.VideoWriter(filename, -1, 1, (width,height), fps)
-    for im in ims:
-        video.write(im)
-    cv2.destroyAllWindows()
-    video.release()
+    with tempfile.TemporaryDirectory() as d:
+        for i, im in enumerate(ims):
+            f = os.path.join(d, "%010d.jpg" % i)
+            imsave(f, im)
+
+        cmd = "ffmpeg -framerate {} -i '{}/%10d.jpg' -pix_fmt yuv420p -r {} -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {}"
+        cmd = cmd.format(fps, d, fps, filename)
+        print(cmd)
+        if os.path.exists(filename):
+            os.remove(filename)
+        os.system(cmd)
 
 def vecdist(a, b):
     return np.sum((a - b) ** 2.0) ** 0.5
