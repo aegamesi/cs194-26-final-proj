@@ -27,9 +27,10 @@ def load_images_from_directory(directory, scale=1.0):
         imgs.append(imread(filename, scale))
     return imgs
 
-def imread(filename, scale=1.0):
+def imread(filename, scale=1.0, as_float=True):
     im = skio.imread(filename)
-    im = sk.img_as_float(im)
+    if as_float:
+        im = sk.img_as_float(im)
     if scale != 1.0:
         im = sk.transform.rescale(im, scale)
     return im
