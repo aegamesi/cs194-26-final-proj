@@ -13,6 +13,7 @@ import cv2
 import tempfile
 import io
 import os
+from multiprocessing import Pool
 
 def load_images_from_directory(directory, scale=1.0):
     filenames = sorted(os.listdir(directory))
@@ -51,9 +52,9 @@ def showimage(im, clip=True, quality=80):
 
 def videosave(filename, ims, fps=60):
     with tempfile.TemporaryDirectory() as d:
-        for i, im in enumerate(ims):
-            f = os.path.join(d, "%010d.jpg" % i)
-            imsave(f, im)
+        with Pool() as p:
+            args = [(os.path.join(d, "%010d.jpg" % i), im) for i, im in enumerate(ims)]
+            p.starmap(imsave, args)
 
         cmd = "ffmpeg -framerate {} -i '{}/%10d.jpg' -pix_fmt yuv420p -r {} -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' {}"
         cmd = cmd.format(fps, d, fps, filename)
@@ -66,3 +67,7 @@ def vecdist(a, b):
     return np.sum((a - b) ** 2.0) ** 0.5
 
 # ffmpeg -framerate 60 -i '%2d.png' -pix_fmt yuv420p -r 60 -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" out.mp4
+
+#######################################################################
+
+
