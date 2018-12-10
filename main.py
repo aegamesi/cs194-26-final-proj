@@ -8,6 +8,7 @@ from multiprocessing import Pool
 import json
 import pickle
 import argparse
+import sys
 
 # first party
 import common
@@ -41,6 +42,7 @@ parser.add_argument('--crop', type=str, default="0,0,0,0", help='"left,right,top
 parser.add_argument('--offset', type=int, default=0, help='start with the N-th image in the directory')
 parser.add_argument('--count', type=int, default=0, help='only use N images')
 
+parser.add_argument('--stabilization', type=float, default=20.0, help='sigma to use with vanish point stabilization')
 parser.add_argument('--speed', type=float, default=1.0, help='average this many frames per input image')
 parser.add_argument('--draw-distance', type=int, default=100, help='how many images to draw per frame')
 parser.add_argument('--mask-radius', type=int, default=32, help='how blurred the mask should be')
@@ -71,6 +73,11 @@ def transform_pts(pts, M):
     """
     trans = cv2.perspectiveTransform(pts.reshape(-1, 1, 2), M)
     return trans.reshape(pts.shape)
+
+def get_vanishing_pt(H, h, w):
+    corners = np.float32([[w * 0.5, h * 0.5]])
+    vanishing, = transform_pts(corners, H)
+    return vanishing
 
 def find_homography(inputs):
     im1, im2 = inputs
@@ -152,14 +159,23 @@ def pairwise_homographies(imgs):
 
 def _compute_frame(args):
     t, context = args
-    imgs, Ts, mask, w, h, draw_distance = context
+    imgs, Ts, target_vanishing_pts, mask, w, h, draw_distance = context
     lower = int(math.floor(t))
     A = lerpiform(w, h, Ts[lower + 1], t - lower)
+    
+    Mvanish = functools.reduce(np.dot, [A] + Ts[lower + 1:])
+    vanishing = get_vanishing_pt(Mvanish, h, w)
+    target = target_vanishing_pts[lower]
+    X = np.eye(3)
+    X[0][2] = target[0] - vanishing[0]
+    X[1][2] = target[1] - vanishing[1]
+    #A = A @ X
 
     transformed_images = []
     im = None
     for j in range(lower, min(len(imgs), lower + draw_distance)):
         M = functools.reduce(np.dot, [A] + Ts[lower + 1:j + 1])
+
         im_trans = cv2.warpPerspective(imgs[j], M, (w, h))
         mask_trans = cv2.warpPerspective(mask, M, (w, h))
         
@@ -170,7 +186,7 @@ def _compute_frame(args):
             
     return im
     
-def final_video(imgs, Ts, speed=1.0, draw_distance=30, mask_r=32):
+def final_video(imgs, Ts, target_vanishing_pts, speed=1.0, draw_distance=30, mask_r=32):
     h, w = imgs[0].shape[:2]
     
     # compute mask
@@ -196,7 +212,7 @@ def final_video(imgs, Ts, speed=1.0, draw_distance=30, mask_r=32):
         t = ind + percent
         timestamps.append(t)
 
-    context = (imgs, Ts, mask, w, h, draw_distance)
+    context = (imgs, Ts, target_vanishing_pts, mask, w, h, draw_distance)
     inputs = [(t, context) for t in timestamps]
     if args.parallel:
         with Pool() as p:
@@ -243,11 +259,22 @@ else:
         with open(args.homography_cache, 'wb') as f:
             pickle.dump(Ts, f)
 
+smooth_sigma = args.stabilization
+vanishings = []
+h, w = imgs[0].shape[0:2]
+for i in range(len(Ts)):
+    H = functools.reduce(np.dot, Ts[i:])
+    vanishings.append(get_vanishing_pt(H, h, w))
+vanishing_pts = np.vstack(vanishings)
+kernel = scipy.signal.gaussian(int(smooth_sigma * 7), std=smooth_sigma)
+kernel /= np.sum(kernel)
+target_vanishing_pts = scipy.ndimage.filters.convolve1d(vanishing_pts, kernel, axis=0, mode='nearest')
 
+#sys.exit(0)
 
 print("Compositing frames...")
 with Timer() as t:
-    frames = final_video(imgs, Ts, speed=args.speed, draw_distance=args.draw_distance, mask_r=args.mask_radius)
+    frames = final_video(imgs, Ts, target_vanishing_pts, speed=args.speed, draw_distance=args.draw_distance, mask_r=args.mask_radius)
 print("computed {} frames in {}".format(len(frames), t.elapsed))
 print()
 
