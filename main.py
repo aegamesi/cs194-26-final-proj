@@ -212,6 +212,9 @@ def final_video(imgs, Ts, target_vanishing_pts, speed=1.0, draw_distance=30, mas
         t = ind + percent
         timestamps.append(t)
 
+    # code to use naive speed
+    # timestamps = list(np.linspace(0.0, len(Ts) - 1.5, int(len(imgs) * speed)))
+
     context = (imgs, Ts, target_vanishing_pts, mask, w, h, draw_distance)
     inputs = [(t, context) for t in timestamps]
     if args.parallel:
