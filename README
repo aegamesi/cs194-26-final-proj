@@ -1,0 +1,21 @@
+Run `python3 main.py -h` for help running the program.
+
+
+Some miscellaneous commands that were used in this project:
+============================================================
+time python3 main.py --crop 0,0,200,200 --offset 0 --count 1000 --speed 1.5 --draw-distance 100 --mask-radius 16 --color --homography-cache hcache0-1000.pickle  ~/Downloads/rotterdam/ out.mp4
+
+
+time python3 main.py --speed 3.6 --draw-distance 100 --mask-radius 16 --homography-cache hcache.pickle "/Users/eli/Downloads/2011_09_26 2/2011_09_26_drive_0027_sync/image_00/data" out.mp4
+
+
+ffmpeg -i input.mov -vf "select=not(mod(n\,3))" -vsync vfr -q:v 2 img_%010d.jpg
+
+
+
+6450 - 7500
+
+time python3 main.py --crop 0,0,150,150 --offset 6450 --count 1000 --speed 1.5 --draw-distance 100 --mask-radius 16 --color --homography-cache hcache6450-7500.pickle  ~/Downloads/death-valley/ out-death-valley.mp4
+
+
+time python3 main.py --crop 0,0,200,200 --offset 0 --count 100 --speed 1.5 --draw-distance 100 --mask-radius 16 --color --homography-cache hcache0-100.pickle  ~/Downloads/rotterdam/ out.mp4
