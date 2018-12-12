@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <link href="assets/css/style.css" type="text/css" rel="stylesheet" />
+    <link href="assets/css/featherlight.min.css" type="text/css" rel="stylesheet" />
+
+    <title>CS 194-26 - Final Project: Automated Infinite Zooming</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.10.0-rc.1/dist/katex.min.css" integrity="sha384-D+9gmBxUQogRLqvARvNLmA9hS2x//eK1FhVb9PiU86gmcrBrJAQT8okdJ4LMp2uv" crossorigin="anonymous">
+</head>
+
+<body>
+    <div class="head">
+        <h1>CS 194-26 - Final Project: Automated Infinite Zooming</h1>
+        <h2>Mudit Gupta (<code>cs194-26-afz</code>) and Eli Lipsitz (<code>cs194-26-acw</code>)</h2>
+
+        <!--<div id="contents">
+            <ul>
+                <li><a href="#part1-1">Part 1.1: Warmup</a></li>
+            </ul>
+        </div>-->
+
+        <h4><u>Note: Click on any image to enlarge it.</u></h4>
+    </div>
+
+    <div class="section" id="part0">
+        <h2>Introduction</h2>
+        <div class="toplink"><a href="#">(back to top)</a></div>
+
+        <p>
+            This project was inspired the opening sequence of the movie, Limitless, and from the powerful notion of finding point correspondences to automatically find homographies between images and create warps. The following sections detail the steps.
+        </p>
+
+        <table>
+            <tr>
+                <td class="col2"><figure>
+                    <iframe style="width: 480px; height: 360px; border: none;" src="https://www.youtube.com/embed/uy_NJjRT3zk?start=5&end=45" allowfullscreen></iframe>
+                    <figcaption><em>Limitless</em> Opening Sequence</figcaption>
+                </figure></td>
+                <td class="col2"><figure>
+                    <iframe src="https://player.vimeo.com/video/75034412" width="480" height="360" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
+                    <figcaption>Nokia <em>NY 41x41</em></figcaption>
+                </figure></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section" id="part1">
+        <h2>Finding Point Correspondences and Homographies</h2>
+        <div class="toplink"><a href="#">(back to top)</a></div>
+
+        <p>
+            To automatically find high-quality point correspondences efficiently, we used the implementation of Scale-Invariant Feature Transform (hereafter, SIFT) built in to OpenCV in Python. SIFT consists of four steps.
+        </p>
+        
+        <ol>
+            <li>Scale-space Extrema Detection applies an approximated gaussian to the images, and generates a pyramid. It uses this pyramid to search for local extrema over different scales, and over space. Different points are allowed to be represented in different scales.</li>
+            
+            <li>Keypoint Localization removes local extrema that are below a desired threshold, and discards edge points using the Hessian to identify points with one eigenvalue significantly larger than the other. These points are discarded.</li>
+
+            <li>Orientation assignment calculates the gradient (depending on the scale) for the point in 36 orientations, and keeps the largest as the orientation innate to the point. This allows for rotational invariance.</li>
+
+            <li>Keypoint Descriptor, similarly to Harris Point Detector, creates feature descriptor for small <script type="latex-inline">16 \times 16</script> blocks, and uses these descriptor to match points. </li>
+        </ol>
+
+        <p>
+            It is imperative that the dataset not contain any annotations or fixed points (such as, perhaps, a portion of the car), otherwise those points match too perfectly across frames, and no infinite zoom is visible. For example:
+        </p>
+
+        <figure>
+            <img src="assets/img/annotations-fail.jpg">
+        </figure>
+
+        <p>
+            Once we had the point correspondences, we originally used OpenCV's <code>findHomography</code> function, with a RANSAC parameter, to generate the homographies between pairwise images. However, in our experiments, we found that 8-degrees of freedom is perhaps too many, as the images would sometimes warp too freely, with too much skew.
+        </p>
+        <p>
+            In order to counter this, we instead used the mis-named function,  <code>estimateRigidTransform</code>, to compute a similarity transformation. Full affine transformations, too, turned out to be too non-restrictive, and the images tended to want to skew lines unnecessarily. Our hypothesis was that <code>estimateRigidTransform</code> would only work well if the dataset included images going mostly in a straight line, and that we would need to default to <code>findHomography</code> for datasets with turns. However, full projective homographies did not perform well on turns either, and similarity transformations gave us a better effect overall.
+        </p>
+        <p>
+            See the following videos for an example of full projective homographies stretching turns. Rigid transformations instead give the effect of a drift, which we found to be more visually appealing.
+        </p>
+
+        <table>
+            <tr>
+                <td class="col2"><figure>
+                    <video controls loop width="100%" src="assets/img/decent_image_perspective.mp4"></video>
+                    <figcaption>Full Perspective Transform</figcaption>
+                </figure></td>
+            </tr>
+            <tr>
+                <td class="col2"><figure>
+                    <video controls loop width="100%" src="assets/img/out_rigid30.mp4"></video>
+                    <figcaption>Similarity Transform</figcaption>
+                </figure></td>
+            </tr>
+        </table>
+        
+
+    </div>
+
+    <div class="section" id="part2">
+        <h2>Video Frame Generation</h2>
+        <div class="toplink"><a href="#">(back to top)</a></div>
+
+        <p>
+            We start by giving each pair of images a fixed number of frames. For the purposes of this analysis, let this fixed number be <script type="latex-inline">F</script>. We also start by having a small number of images, <code>draw_distance</code> overlaid on each other. Note that we do not start with <em>all</em> images coexisting on the video frame at the first time step, since this would greatly slow down the algorithm. The draw distance should be chosen appropriately such that the furthest drawn image is approximately scaled down to nothingness. These images are overlaid after having been transformed by the computed homography (or similarity), so the effect is similar to that of a mosaic, except with the second image being completely inside the first. 
+        </p>
+
+        <p>
+            Now, from the first <script type="latex-inline">F</script> frames, we need to animate the frames such that the first inner image is warping towards the outer image. We do this by linearly interpolating the four boundary points of the inner image towards the viewport, and getting a warp animation-matrix <script type="latex-inline">\mathbf{A}</script>. <script type="latex-inline">\mathbf{A}</script> is the only matrix applied to the outer image. This causes the outer image to be pushed out of frame with a seamless transformation.
+        </p>
+
+        <p>
+            For the first inner image, we apply <script type="latex-inline">\mathbf{A} \cdot \mathbf{T}_1</script>, where <script type="latex-inline">\mathbf{T}_1</script> is the homography (or similarity) matrix from the outer to the inner image. This first simulates the image being 'placed' inside the outer image, and then applied the animation.
+        </p>
+
+        <p>
+            For the second inner image, we apply <script type="latex-inline">\mathbf{A} \cdot \mathbf{T}_1 \cdot \mathbf{T}_2</script>. <script type="latex-inline">\mathbf{T}_2</script> is applied to 'place' the second inner image on the placed first inner image. <script type="latex-inline">\mathbf{A}</script> is applied for the animation. For inner image <script type="latex-inline">k</script>, we apply <script type="latex-inline">\mathbf{A} \cdot \mathbf{T}_1 \cdot \ldots \cdot \mathbf{T}_k</script>
+        </p>
+
+        <p>
+            Then, we begin the <script type="latex-inline">F+1</script> frame by placing the next image on the viewport, and by computing the new <script type="latex-inline">\mathbf{A}</script> matrix. Now, the first inner image from the first <script type="latex-inline">F</script> frames has become the outer image, so the same process is repeated.
+        </p>
+
+        <p>
+            To smooth out the edges, we apply a blurred rounded-rectangle mask to each image, and transform this mask as we transform the images. This gets rid of the hard borders which appear on placing the images. The following images show the difference that masking creates.
+        </p>
+
+        <table>
+            <tr>
+                <td class="col2"><figure>
+                    <img src="assets/img/no_mask.jpg">
+                    <figcaption>No Mask</figcaption>
+                </figure></td>
+            </tr>
+            <tr>
+                <td class="col2"><figure>
+                    <img src="assets/img/with_mask.jpg">
+                    <figcaption>With Mask</figcaption>
+                </figure></td>
+            </tr>
+        </table>
+
+        <p>
+            The <code>draw_distance</code> changes the perception of the depth of the image drastically. In practice, we found that a sufficiently large (~100) draw distance works well for the effect we want to create, however, this depends on the data set. The primary concern with larger draw parameters is the computation time it adds. See the following images for comparison:
+        </p>
+
+        <table>
+            <tr>
+                <td class="col2"><figure>
+                    <img src="assets/img/draw_5.jpg">
+                    <figcaption>
+                        Draw Distance = 5
+                        <br>
+                        Some ghosting visible where the layering ends. Visually, does not provide much depth or a good zoom effect.
+                    </figcaption>
+                </figure></td>
+            </tr>
+            <tr>
+                <td class="col2"><figure>
+                    <img src="assets/img/draw_100.jpg">
+                    <figcaption>
+                        Draw Distance = 100
+                        <br>
+                        All lines converge to a small portion in the center, providing depth. Video looks like an infinite zoom. Significantly slower to compute
+                    </figcaption>
+                </figure></td>
+            </tr>
+        </table>
+
+    </div>
+
+    <div class="section" id="part3">
+        <h2>Bells and Whistles: Speed Correction</h2>
+        <div class="toplink"><a href="#">(back to top)</a></div>
+
+        <p>
+            After generating some videos, we found that the warping speed was a little non-uniform. This made sense, since the world was sampled at a constant time offset, disregarding the speed of the moving object. The effect generated was an infinite zoom, but as if the rate of zoom is rapidly changing. To counter the nauseating bumps in time, we applied a speed correction.
+        </p>
+
+        <p>
+            Our approach stemmed from the geometrical interpretation of the determinant of a matrix, which is that the determinant captures the change in volume of a unit hypercube at the origin. We used the determinants of the homography matrix between pairwise images for both this approach, and the next. Naturally, all our determinants were smaller than unity, however, they varied vastly. The first key insight is that if the determinant of the homography between two successive images is large, then the object in question was moving at a relatively slow speed between these two frames, and vice versa. If the determinant is relatively large, then we ought to give this warp more frames than we do when the determinant is small. We used a simple linear \lstinline{speed_parameter} to fine-tune the speed at which the entire video should be played.
+        </p> 
+
+        <p>
+            The determinant of a particular homography cannot be used directly to linearly control the number of frames given to the transformation between the respective pair of images, however. Instead, the second key insight is that we want the final video to have a constant "zoom per time" -- that is, the apparent rate of scaling of the images should be constant. Since the determinant of each homography represents the amount of scaling from one image to the next, we simply have to sample along the images such that effective scale between each sample is the same.
+        </p>
+
+        <p>
+            We can compute this in log-space to allow us to easily invert the function from image to cumulative scale and linearly interpolate:
+        </p>
+
+        <script type="latex">\mathrm{S}(i) = \sum_{k=1}^{i}{-\log (\det{\mathbf{T}_k}) }</script>
+
+        <p>
+            We take the start scale to be <script type="latex-inline">s_0 = 1</script>, and the end scale to be <script type="latex-inline">s_N = \mathrm{S}(N)</script>. Then, the sample to take for frame <script type="latex-inline">f</script> out of <script type="latex-inline">F</script> is just:
+        </p>
+
+        <script type="latex">t = \mathrm{S}^{-1}\left( \frac{f}{F} (s_N - s_0) + 1 \right)</script>
+
+        <p>
+            Where <script type="latex-inline">\left \lfloor{t}\right \rfloor</script> is the index of the image to use as the outermost for that frame, and <script type="latex-inline">t - \left \lfloor{t}\right \rfloor</script> denotes the progress in the transformation from the outer image to the next image. <script type="latex-inline">\mathrm{S}^{-1}</script> is computed by linearly interpolating between the integer-spaced inputs.
+        </p>
+
+        <p>
+            The following videos show a side-by-side comparison of speed correction in action. The top video does not have speed correction, and the lower video has speed correction.
+        </p>
+
+        <figure>
+            <video controls loop width="100%" src="assets/img/speed_comparison2.mp4"></video>
+        </figure>
+
+        <p>
+            Notice how the top video seems to slow down and stutter at certain parts, while the bottom video has a consistent speed of zoom throughout. This effect is even more pronounced when the frames are taken at a less consistent speed.
+        </p>
+    </div>
+
+    <div class="section" id="part4">
+        <h2>Results</h2>
+        <div class="toplink"><a href="#">(back to top)</a></div>
+
+
+        <h3>Video 1: Forest</h3>
+        <p>
+            This is from <code>2011_09_26_drive_0027</code> from the <a href="http://www.cvlibs.net/datasets/kitti/raw_data.php?type=road">KIITI Vision Benchmark Suite</a>.
+        </p>
+
+        <figure>
+            <video controls loop width="100%" src="assets/img/out_orig_2_smooth_cropped_speed3.6_draw100.mp4"></video>
+        </figure>
+
+        <p>
+            For comparison, see the same frames, but played back to back without applying any of the modifications from our project:
+        </p>
+        <figure>
+            <video controls loop width="100%" src="assets/img/back2back.mp4"></video>
+        </figure>
+
+        <hr>
+        <h3>Video 2: Rotterdam</h3>
+        <p>
+            This data is from the YouTube Video <a href="https://www.youtube.com/watch?v=9daF_mgN3Dc">Rijden in Rotterdam 4k dashcam</a> by Werner Schepen.
+        </p>
+
+        <figure>
+            <video controls loop width="100%" src="assets/img/out_rotterdam_0-1000.mp4"></video>
+        </figure>
+
+
+        <hr>
+        <h3>Video 3: Death Valley</h3>
+        <p>
+            This data is from the YouTube Video <a href="https://www.youtube.com/watch?v=c0GaJWmR4-M">Drive through Death Valley-HD</a> by Milan Cvetkovic.
+        </p>
+
+        <figure>
+            <video controls loop width="100%" src="assets/img/out-death-valley.mp4"></video>
+        </figure>
+    </div>
+
+
+    <script src="assets/js/jquery-3.3.1.min.js"></script>
+    <script src="assets/js/featherlight.min.js" type="text/javascript" charset="utf-8"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.10.0-rc.1/dist/katex.min.js" integrity="sha384-483A6DwYfKeDa0Q52fJmxFXkcPCFfnXMoXblOkJ4JcA8zATN6Tm78UNL72AKk+0O" crossorigin="anonymous"></script>
+    <script src="assets/js/script.js" type="text/javascript"></script>
+</body>
+</html>
