@@ -162,6 +162,8 @@ def _compute_frame(args):
     imgs, Ts, target_vanishing_pts, mask, w, h, draw_distance = context
     lower = int(math.floor(t))
     A = lerpiform(w, h, Ts[lower + 1], t - lower)
+
+    print(draw_distance)
     
     Mvanish = functools.reduce(np.dot, [A] + Ts[lower + 1:])
     vanishing = get_vanishing_pt(Mvanish, h, w)
@@ -190,9 +192,9 @@ def final_video(imgs, Ts, target_vanishing_pts, speed=1.0, draw_distance=30, mas
     h, w = imgs[0].shape[:2]
     
     # compute mask
-    mask = np.zeros((h, w))
-    mask[mask_r:-mask_r,mask_r:-mask_r] = 1.0
-    mask = scipy.ndimage.gaussian_filter(mask, sigma=(mask_r * 0.5))
+    mask = np.ones((h, w))
+    #mask[mask_r:-mask_r,mask_r:-mask_r] = 1.0
+    #mask = scipy.ndimage.gaussian_filter(mask, sigma=(mask_r * 0.5))
     if len(imgs[0].shape) == 3:
         mask = np.dstack([mask] * imgs[0].shape[-1])
     
@@ -215,8 +217,13 @@ def final_video(imgs, Ts, target_vanishing_pts, speed=1.0, draw_distance=30, mas
     # code to use naive speed
     # timestamps = list(np.linspace(0.0, len(Ts) - 1.5, int(len(imgs) * speed)))
 
-    context = (imgs, Ts, target_vanishing_pts, mask, w, h, draw_distance)
-    inputs = [(t, context) for t in timestamps]
+    timestamps = [0.0] * 10
+
+    inputs = []
+    for i in range(0, 50):
+        context = (imgs, Ts, target_vanishing_pts, mask, w, h, i + 1)
+        inputs.append((0.0, context))
+
     if args.parallel:
         with Pool() as p:
             frames = p.imap(_compute_frame, inputs, chunksize=20)
@@ -282,4 +289,4 @@ print("computed {} frames in {}".format(len(frames), t.elapsed))
 print()
 
 print("Saving video...")
-common.videosave(args.output, frames, fps=60)
+common.videosave(args.output, frames, fps=1)
